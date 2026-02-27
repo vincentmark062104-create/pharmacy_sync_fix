@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PharmaSync - Pharmacy System</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Phosphor Icons (Replacement for Lucide to work in plain HTML) -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  
+  <!-- react-is is REQUIRED by prop-types and recharts in UMD builds -->
+  <script crossorigin src="https://unpkg.com/react-is@18/umd/react-is.development.js"></script>
+  
+  <!-- Babel for parsing JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Recharts & PropTypes (Pinned to stable versions to fix ForwardRef errors) -->
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
+  <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
+  
+  <!-- HTML5 QRCode Scanner -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    /* Custom Scrollbar for a cleaner look */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    @verbatim
+    const { useState, useMemo, useEffect, useRef } = React;
+    const { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, Legend, ResponsiveContainer } = window.Recharts;
+    
+    // --- ICON HELPER COMPONENT ---
+    // Maps Lucide icon names to Phosphor icon classes for CDN usage
+    const IconMap = {
+      LayoutDashboard: 'ph-squares-four', Package: 'ph-package', ShoppingCart: 'ph-shopping-cart',
+      ClipboardList: 'ph-clipboard-text', TrendingUp: 'ph-trend-up', Users: 'ph-users',
+      FileBarChart: 'ph-chart-bar', LogOut: 'ph-sign-out', Plus: 'ph-plus', Search: 'ph-magnifying-glass',
+      Edit: 'ph-pencil-simple', Trash2: 'ph-trash', Printer: 'ph-printer', Download: 'ph-download-simple',
+      AlertTriangle: 'ph-warning', ScanLine: 'ph-barcode', Activity: 'ph-activity', CheckCircle: 'ph-check-circle',
+      XCircle: 'ph-x-circle', MessageSquare: 'ph-chat-circle-text', X: 'ph-x', Send: 'ph-paper-plane-right',
+      Bot: 'ph-robot', QrCode: 'ph-qr-code', Camera: 'ph-camera', Upload: 'ph-upload-simple',
+      UserCog: 'ph-user-gear', History: 'ph-clock-counter-clockwise', ShieldCheck: 'ph-shield-check'
+    };
+
+    const Icon = ({ name, className }) => {
+      let sizeClass = '';
+      if (className?.includes('w-3')) sizeClass = 'text-sm';
+      else if (className?.includes('w-4')) sizeClass = 'text-base';
+      else if (className?.includes('w-5')) sizeClass = 'text-xl';
+      else if (className?.includes('w-6')) sizeClass = 'text-2xl';
+      else if (className?.includes('w-8')) sizeClass = 'text-3xl';
+      else if (className?.includes('w-10')) sizeClass = 'text-4xl';
+      else if (className?.includes('w-12')) sizeClass = 'text-5xl';
+      
+      return <i className={`ph ${IconMap[name]} ${sizeClass} ${className} flex items-center justify-center`}></i>;
+    };
+
+    // --- MOCK DATA & INITIAL STATE ---
+    const initialAccounts = [
+      { id: 1, username: 'admin', password: 'admin123', role: 'Admin' },
+      { id: 2, username: 'pharma', password: 'password', role: 'Pharmacist' },
+      { id: 3, username: 'cashier', password: 'password', role: 'Cashier' }
+    ];
+
+    const initialLogs = [
+      { id: 1, timestamp: new Date().toISOString(), username: 'system', role: 'System', action: 'System Init', details: 'Application loaded' }
+    ];
+
+    const initialSuppliers = [
+      { id: 1, name: 'PharmaCorp Inc.', contact: '123-456-7890', address: '123 Health Blvd', email: 'sales@pharmacorp.com', productsSupplied: 12 },
+      { id: 2, name: 'MediSupply Co.', contact: '098-765-4321', address: '456 Wellness Ave', email: 'contact@medisupply.com', productsSupplied: 8 },
+    ];
+
+    const mockHistory = (base) => Array.from({ length: 12 }, () => Math.floor(base + (Math.random() * base * 0.4 - base * 0.2)));
+
+    const initialProducts = [
+      { id: 1, name: 'Biogesic', genericName: 'Paracetamol', brand: 'Unilab', category: 'Analgesic', price: 5.00, quantity: 500, minStock: 100, expirationDate: '2027-05-12', supplierId: 1, barcode: '100001', history: mockHistory(800) },
+      { id: 2, name: 'Amoxil', genericName: 'Amoxicillin', brand: 'GSK', category: 'Antibiotic', price: 15.50, quantity: 45, minStock: 50, expirationDate: '2026-08-20', supplierId: 2, barcode: '100002', history: mockHistory(200) },
+      { id: 3, name: 'Virlix', genericName: 'Cetirizine', brand: 'GSK', category: 'Antihistamine', price: 22.00, quantity: 15, minStock: 30, expirationDate: '2026-01-15', supplierId: 2, barcode: '100003', history: mockHistory(150) },
+      { id: 4, name: 'Lifezar', genericName: 'Losartan', brand: 'Unilab', category: 'Antihypertensive', price: 18.00, quantity: 300, minStock: 100, expirationDate: '2028-11-01', supplierId: 1, barcode: '100004', history: mockHistory(400) },
+      { id: 5, name: 'Glucophage', genericName: 'Metformin', brand: 'Merck', category: 'Antidiabetic', price: 12.00, quantity: 0, minStock: 50, expirationDate: '2026-12-10', supplierId: 1, barcode: '100005', history: mockHistory(300) },
+    ];
+
+    const currentYear = new Date().getFullYear();
+    const initialSales = [
+      ...Array.from({ length: 12 }).map((_, i) => ({
+        id: 1000 + i,
+        date: new Date(currentYear, i, 15).toISOString(),
+        items: [{ name: 'Monthly Aggregate Data', qty: 1, price: 0, total: 0 }],
+        total: Math.floor(Math.random() * 3000) + 1500 + (i * 200)
+      })),
+      { id: 101, date: new Date().toISOString(), items: [{ name: 'Biogesic', qty: 10, price: 5, total: 50 }], total: 50 },
+      { id: 102, date: new Date(Date.now() - 86400000).toISOString(), items: [{ name: 'Amoxil', qty: 5, price: 15.5, total: 77.5 }], total: 77.5 },
+    ];
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // --- UTILITY FUNCTIONS ---
+    const exportToCSV = (data, filename) => {
+      if (!data || !data.length) return;
+      const headers = Object.keys(data[0]).join(',');
+      const rows = data.map(row => Object.values(row).map(val => `"${val}"`).join(',')).join('\n');
+      const csv = `${headers}\n${rows}`;
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.setAttribute('hidden', '');
+      a.setAttribute('href', url);
+      a.setAttribute('download', `${filename}.csv`);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+
+    const fileToBase64 = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = error => reject(error);
+    });
+
+    // --- GEMINI API UTILS ---
+    const apiKey = ""; 
+
+    const fetchWithRetry = async (url, options, retries = 5) => {
+      const delays = [1000, 2000, 4000, 8000, 16000];
+      for (let i = 0; i < retries; i++) {
+        try {
+          const res = await fetch(url, options);
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          return await res.json();
+        } catch (err) {
+          if (i === retries - 1) throw err;
+          await new Promise(r => setTimeout(r, delays[i]));
+        }
+      }
+    };
+
+    // ==========================================
+    // MAIN APP COMPONENT
+    // ==========================================
+    function App() {
+      const [user, setUser] = useState(null);
+      const [activeTab, setActiveTab] = useState('dashboard');
+      
+      // App State
+      const [accounts, setAccounts] = useState(initialAccounts);
+      const [logs, setLogs] = useState(initialLogs);
+      const [products, setProducts] = useState(initialProducts);
+      const [suppliers, setSuppliers] = useState(initialSuppliers);
+      const [sales, setSales] = useState(initialSales);
+
+      // Notifications
+      const [notifications, setNotifications] = useState([]);
+      
+      const addNotification = (msg) => {
+        setNotifications(prev => [{ id: Date.now(), msg, time: new Date().toLocaleTimeString() }, ...prev].slice(0, 5));
+      };
+
+      const logActivity = (currentUser, action, details) => {
+        const newLog = {
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          username: currentUser.username,
+          role: currentUser.role,
+          action,
+          details
+        };
+        setLogs(prev => [newLog, ...prev]);
+      };
+
+      if (!user) {
+        return <LoginView accounts={accounts} onLogin={(u) => { 
+          setUser(u); 
+          addNotification(`Logged in as ${u.role}`);
+          logActivity(u, 'Login', 'User authenticated successfully');
+        }} />;
+      }
+
+      const renderContent = () => {
+        switch (activeTab) {
+          case 'dashboard': return <DashboardView products={products} sales={sales} notifications={notifications} />;
+          case 'products': return <ProductsView products={products} setProducts={setProducts} suppliers={suppliers} user={user} logActivity={logActivity} />;
+          case 'pos': return <POSView products={products} setProducts={setProducts} setSales={setSales} addNotification={addNotification} user={user} logActivity={logActivity} />;
+          case 'inventory': return <InventoryView products={products} />;
+          case 'forecast': return <ForecastView products={products} />;
+          case 'suppliers': return <SuppliersView suppliers={suppliers} setSuppliers={setSuppliers} user={user} logActivity={logActivity} />;
+          case 'reports': return <ReportsView products={products} sales={sales} suppliers={suppliers} />;
+          case 'user-management': return <UserManagementView accounts={accounts} setAccounts={setAccounts} user={user} logActivity={logActivity} />;
+          case 'activity-logs': return <ActivityLogsView logs={logs} />;
+          default: return <DashboardView products={products} sales={sales} notifications={notifications} />;
+        }
+      };
+
+      const navItems = [
+        { id: 'dashboard', icon: 'LayoutDashboard', label: 'Dashboard', roles: ['Admin', 'Pharmacist', 'Cashier'] },
+        { id: 'pos', icon: 'ShoppingCart', label: 'Sales (POS)', roles: ['Admin', 'Cashier'] },
+        { id: 'products', icon: 'Package', label: 'Products', roles: ['Admin', 'Pharmacist'] },
+        { id: 'inventory', icon: 'ClipboardList', label: 'Inventory', roles: ['Admin', 'Pharmacist'] },
+        { id: 'forecast', icon: 'TrendingUp', label: 'Forecasting (SMA)', roles: ['Admin', 'Pharmacist'] },
+        { id: 'suppliers', icon: 'Users', label: 'Suppliers', roles: ['Admin'] },
+        { id: 'user-management', icon: 'UserCog', label: 'User Management', roles: ['Admin'] },
+        { id: 'activity-logs', icon: 'History', label: 'Activity Logs', roles: ['Admin'] },
+        { id: 'reports', icon: 'FileBarChart', label: 'Reports', roles: ['Admin'] },
+      ];
+
+      return (
+        <div className="flex h-screen bg-slate-50 font-sans text-slate-800 relative">
+          {/* Sidebar */}
+          <aside className="w-64 bg-emerald-800 text-white flex flex-col shadow-xl z-10">
+            <div className="p-6 flex items-center gap-3 border-b border-emerald-700">
+              <Icon name="Activity" className="w-8 h-8 text-emerald-300" />
+              <h1 className="text-xl font-bold tracking-tight">PharmaSync</h1>
+            </div>
+            
+            <div className="p-4 border-b border-emerald-700 bg-emerald-900/50">
+              <p className="text-sm text-emerald-200">Welcome,</p>
+              <p className="font-semibold">{user.username}</p>
+              <span className="text-xs bg-emerald-600 px-2 py-0.5 rounded-full mt-1 inline-block">{user.role}</span>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto py-4">
+              <ul className="space-y-1 px-3">
+                {navItems.filter(item => item.roles.includes(user.role)).map(item => (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => setActiveTab(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                        activeTab === item.id ? 'bg-emerald-600 text-white shadow-md' : 'text-emerald-100 hover:bg-emerald-700/50'
+                      }`}
+                    >
+                      <Icon name={item.icon} className="w-5 h-5" />
+                      <span className="font-medium">{item.label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            
+            <div className="p-4 border-t border-emerald-700">
+              <button 
+                onClick={() => {
+                  logActivity(user, 'Logout', 'User logged out');
+                  setUser(null);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2 text-emerald-200 hover:text-white hover:bg-emerald-700 rounded-lg transition-colors"
+              >
+                <Icon name="LogOut" className="w-5 h-5" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </aside>
+
+          {/* Main Content */}
+          <main className="flex-1 overflow-y-auto flex flex-col h-screen relative">
+            <header className="bg-white p-4 shadow-sm flex justify-between items-center border-b">
+              <h2 className="text-2xl font-bold text-slate-800 capitalize">
+                {navItems.find(i => i.id === activeTab)?.label}
+              </h2>
+              <div className="text-sm text-slate-500">
+                 {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </div>
+            </header>
+            <div className="p-6 flex-1">
+              {renderContent()}
+            </div>
+          </main>
+
+          {/* AI Chatbot Floating Component */}
+          <Chatbot />
+        </div>
+      );
+    }
+
+    // ==========================================
+    // AI CHATBOT COMPONENT
+    // ==========================================
+    function Chatbot() {
+      const [isOpen, setIsOpen] = useState(false);
+      const [input, setInput] = useState('');
+      const [isLoading, setIsLoading] = useState(false);
+      const [messages, setMessages] = useState([
+        { role: 'model', text: 'Hi! I am the PharmaSync AI Assistant. How can I help you navigate the system today?' }
+      ]);
+      const messagesEndRef = useRef(null);
+
+      useEffect(() => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, [messages, isOpen]);
+
+      const handleSend = async (e) => {
+        e?.preventDefault();
+        if (!input.trim()) return;
+
+        const newMessages = [...messages, { role: 'user', text: input }];
+        setMessages(newMessages);
+        setInput('');
+        setIsLoading(true);
+
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+          const payload = {
+            contents: newMessages.map(m => ({
+              role: m.role,
+              parts: [{ text: m.text }]
+            })),
+            systemInstruction: {
+              parts: [{ text: "You are an AI assistant for PharmaSync, a Pharmacy Sales and Inventory System. You help users understand how to use the Dashboard, POS, Products, Inventory, Forecasting (SMA), Suppliers, and Reports modules. Keep your answers concise, friendly, and helpful." }]
+            }
+          };
+
+          const data = await fetchWithRetry(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't process that.";
+          setMessages(prev => [...prev, { role: 'model', text: botReply }]);
+        } catch (error) {
+          console.error(error);
+          setMessages(prev => [...prev, { role: 'model', text: error.message || "Error connecting to AI. Please try again later." }]);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      return (
+        <div className="fixed bottom-6 right-6 z-50">
+          {isOpen ? (
+            <div className="bg-white rounded-2xl shadow-2xl w-80 sm:w-96 flex flex-col overflow-hidden border border-slate-200 h-[500px] animate-in slide-in-from-bottom-5">
+              <div className="bg-emerald-600 p-4 flex justify-between items-center text-white">
+                <div className="flex items-center gap-2">
+                  <Icon name="Bot" className="w-5 h-5" />
+                  <h3 className="font-bold">AI Assistant</h3>
+                </div>
+                <button onClick={() => setIsOpen(false)} className="hover:bg-emerald-700 p-1 rounded transition-colors">
+                  <Icon name="X" className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                {messages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${
+                      msg.role === 'user' 
+                        ? 'bg-emerald-600 text-white rounded-tr-none' 
+                        : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none shadow-sm'
+                    }`}>
+                      {msg.text}
+                    </div>
+                  </div>
+                ))}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-white border border-slate-200 p-3 rounded-2xl rounded-tl-none text-slate-400 text-sm shadow-sm flex items-center gap-1">
+                      <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                      <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              <form onSubmit={handleSend} className="p-3 bg-white border-t border-slate-100 flex gap-2">
+                <input 
+                  type="text" 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask me anything..." 
+                  className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                />
+                <button 
+                  type="submit" 
+                  disabled={isLoading || !input.trim()}
+                  className="bg-emerald-600 text-white p-2 rounded-lg hover:bg-emerald-700 disabled:bg-slate-300 transition-colors"
+                >
+                  <Icon name="Send" className="w-5 h-5" />
+                </button>
+              </form>
+            </div>
+          ) : (
+            <button 
+              onClick={() => setIsOpen(true)}
+              className="bg-emerald-600 text-white p-4 rounded-full shadow-xl hover:bg-emerald-700 hover:scale-105 transition-all flex items-center justify-center"
+            >
+              <Icon name="MessageSquare" className="w-6 h-6" />
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // BARCODE SCANNER MODAL COMPONENT
+    // ==========================================
+    function BarcodeScannerModal({ onClose, onScan }) {
+      const onScanRef = useRef(onScan);
+      useEffect(() => {
+        onScanRef.current = onScan;
+      }, [onScan]);
+
+      useEffect(() => {
+        let html5QrcodeScanner;
+        
+        const initScanner = () => {
+          if (window.Html5QrcodeScanner && !html5QrcodeScanner) {
+            html5QrcodeScanner = new window.Html5QrcodeScanner(
+              "reader",
+              { fps: 10, qrbox: { width: 250, height: 250 } },
+              false
+            );
+            html5QrcodeScanner.render(
+              (decodedText) => {
+                html5QrcodeScanner.clear();
+                onScanRef.current(decodedText);
+              },
+              (error) => {}
+            );
+          }
+        };
+
+        if (window.Html5QrcodeScanner) {
+          initScanner();
+        }
+
+        return () => {
+          if (html5QrcodeScanner) {
+            html5QrcodeScanner.clear().catch(error => {
+              console.error("Failed to clear html5QrcodeScanner. ", error);
+            });
+          }
+        };
+      }, []);
+
+      return (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                <Icon name="QrCode" className="w-5 h-5 text-emerald-600"/> Scan Product Barcode
+              </h3>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <Icon name="XCircle" className="w-6 h-6"/>
+              </button>
+            </div>
+            <div className="p-4">
+              <div id="reader" className="w-full rounded-lg overflow-hidden border border-slate-200 bg-slate-50 min-h-[300px]"></div>
+              <p className="text-center text-sm text-slate-500 mt-4">
+                Point your camera at the barcode to automatically scan.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // AI LABEL SCANNER MODAL COMPONENT
+    // ==========================================
+    function AILabelScannerModal({ onClose, onScan }) {
+      const [isLoading, setIsLoading] = useState(false);
+      const [preview, setPreview] = useState(null);
+
+      const handleFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setPreview(URL.createObjectURL(file));
+        setIsLoading(true);
+
+        try {
+          const base64Data = await fileToBase64(file);
+          
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+          const payload = {
+            contents: [{
+              parts: [
+                { text: "You are a pharmacy assistant AI. Extract product details from this medicine label. Format the expiration date as YYYY-MM-DD (assume the last day of the month if day is missing, default to 2000s if year is 2 digits). For barcode, use the prominent alphanumeric code (like NDC) if the actual barcode lines don't have human-readable numbers. Infer the medical category (e.g., Analgesic, Antibiotic, Antihypertensive, Antihistamine, Antidiabetic, Vitamins) based on the generic name." },
+                { inlineData: { mimeType: file.type, data: base64Data } }
+              ]
+            }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  name: { type: "STRING", description: "Brand name or main name (e.g., Diltiazem)" },
+                  genericName: { type: "STRING", description: "Generic name (e.g., Diltiazem HCl)" },
+                  brand: { type: "STRING", description: "Manufacturer or packager (e.g., UDL)" },
+                  category: { type: "STRING", description: "Medical category" },
+                  expirationDate: { type: "STRING", description: "YYYY-MM-DD format" },
+                  barcode: { type: "STRING", description: "Alphanumeric code or NDC" }
+                }
+              }
+            }
+          };
+
+          const data = await fetchWithRetry(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (jsonText) {
+            const extracted = JSON.parse(jsonText);
+            onScan(extracted);
+          } else {
+            alert("Could not extract data from the image.");
+          }
+        } catch (error) {
+          console.error(error);
+          alert(error.message || "Error processing image.");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                <Icon name="Camera" className="w-5 h-5 text-emerald-600"/> AI Label Scanner
+              </h3>
+              <button onClick={onClose} disabled={isLoading} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <Icon name="XCircle" className="w-6 h-6"/>
+              </button>
+            </div>
+            <div className="p-6 flex flex-col items-center">
+              {preview ? (
+                <div className="w-full relative rounded-lg overflow-hidden border border-slate-200 mb-4 bg-black flex items-center justify-center min-h-[250px] max-h-[300px]">
+                  <img src={preview} alt="Preview" className="max-w-full max-h-full object-contain" />
+                  {isLoading && (
+                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center text-white">
+                      <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                      <p className="font-medium">AI Analyzing Label...</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <label className="w-full h-64 border-2 border-dashed border-emerald-300 rounded-xl bg-emerald-50 flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-100 transition-colors mb-4">
+                  <Icon name="Upload" className="w-10 h-10 text-emerald-500 mb-3" />
+                  <span className="text-emerald-800 font-medium">Click to Take Picture or Upload</span>
+                  <span className="text-emerald-600 text-sm mt-1">Image will be analyzed by AI</span>
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
+                </label>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // LOGIN PAGE
+    // ==========================================
+    function LoginView({ onLogin, accounts }) {
+      const [username, setUsername] = useState('');
+      const [password, setPassword] = useState('');
+      const [role, setRole] = useState('Admin');
+      const [error, setError] = useState('');
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        setError('');
+        const account = accounts.find(a => a.username === username && a.password === password && a.role === role);
+        if(account) {
+          onLogin(account);
+        } else {
+          setError('Invalid username, password, or role.');
+        }
+      };
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-emerald-900 bg-opacity-95">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex flex-col items-center mb-8">
+              <div className="bg-emerald-100 p-3 rounded-full mb-4">
+                <Icon name="Activity" className="w-10 h-10 text-emerald-600" />
+              </div>
+              <h1 className="text-3xl font-bold text-slate-800">PharmaSync</h1>
+              <p className="text-slate-500 mt-1">Sales & Inventory System</p>
+            </div>
+            
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg text-sm text-center">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+                <input 
+                  type="text" required value={username} onChange={e => setUsername(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" 
+                  placeholder="Enter username (try: admin)"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                <input 
+                  type="password" required value={password} onChange={e => setPassword(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" 
+                  placeholder="(try: admin123)"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                <select 
+                  value={role} onChange={e => setRole(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none bg-white"
+                >
+                  <option value="Admin">Admin</option>
+                  <option value="Pharmacist">Pharmacist</option>
+                  <option value="Cashier">Cashier</option>
+                </select>
+              </div>
+              <button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200">
+                Sign In
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // DASHBOARD PAGE
+    // ==========================================
+    function DashboardView({ products, sales, notifications }) {
+      const [detailModal, setDetailModal] = useState(null);
+
+      const today = new Date().toISOString().split('T')[0];
+      const todaySalesList = sales.filter(s => s.date.startsWith(today));
+      const todaySales = todaySalesList.reduce((sum, s) => sum + s.total, 0);
+      
+      const lowStockList = products.filter(p => p.quantity > 0 && p.quantity <= p.minStock);
+      const outOfStockList = products.filter(p => p.quantity === 0);
+      
+      const currentYear = new Date().getFullYear();
+      const salesData = months.map((m, i) => {
+        const monthSales = sales
+          .filter(s => {
+            const d = new Date(s.date);
+            return d.getMonth() === i && d.getFullYear() === currentYear;
+          })
+          .reduce((sum, s) => sum + s.total, 0);
+        return { name: m, sales: monthSales };
+      });
+
+      const renderDetailModal = () => {
+        if (!detailModal) return null;
+        let title = '';
+        let data = [];
+        let columns = [];
+
+        if (detailModal === 'today-sales') {
+          title = "Today's Sales Transactions";
+          data = todaySalesList;
+          columns = [
+            { header: 'Trans. ID', render: (row) => row.id },
+            { header: 'Time', render: (row) => new Date(row.date).toLocaleTimeString() },
+            { header: 'Items Qty', render: (row) => row.items.reduce((acc, curr) => acc + curr.qty, 0) },
+            { header: 'Total', render: (row) => `$${row.total.toFixed(2)}` },
+          ];
+        } else if (detailModal === 'total-products') {
+          title = "All Products";
+          data = products;
+          columns = [
+            { header: 'Name', render: (row) => row.name },
+            { header: 'Category', render: (row) => row.category },
+            { header: 'Current Stock', render: (row) => <span className={row.quantity === 0 ? 'text-red-500 font-bold' : row.quantity <= row.minStock ? 'text-amber-500 font-bold' : 'text-emerald-600 font-bold'}>{row.quantity}</span> },
+            { header: 'Price', render: (row) => `$${row.price.toFixed(2)}` },
+          ];
+        } else if (detailModal === 'low-stock') {
+          title = "Low Stock Alerts";
+          data = lowStockList;
+          columns = [
+            { header: 'Name', render: (row) => row.name },
+            { header: 'Category', render: (row) => row.category },
+            { header: 'Current Stock', render: (row) => <span className="text-amber-500 font-bold">{row.quantity}</span> },
+            { header: 'Min Stock Level', render: (row) => row.minStock },
+          ];
+        } else if (detailModal === 'out-of-stock') {
+          title = "Out of Stock Products";
+          data = outOfStockList;
+          columns = [
+            { header: 'Name', render: (row) => row.name },
+            { header: 'Category', render: (row) => row.category },
+            { header: 'Expiry Date', render: (row) => row.expirationDate },
+            { header: 'Last Price', render: (row) => `$${row.price.toFixed(2)}` },
+          ];
+        }
+
+        return (
+          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
+              <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                <h3 className="font-bold text-lg text-slate-800">{title}</h3>
+                <button onClick={() => setDetailModal(null)} className="text-slate-400 hover:text-slate-600 transition-colors"><Icon name="XCircle" className="w-6 h-6"/></button>
+              </div>
+              <div className="p-0 flex-1 overflow-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-50 sticky top-0 border-b z-10">
+                    <tr>
+                      {columns.map((col, idx) => <th key={idx} className="p-3 font-medium text-slate-600">{col.header}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {data.length === 0 ? (
+                      <tr><td colSpan={columns.length} className="p-6 text-center text-slate-400">No records found.</td></tr>
+                    ) : (
+                      data.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          {columns.map((col, colIdx) => <td key={colIdx} className="p-3 text-slate-700">{col.render(row)}</td>)}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <WidgetCard title="Total Sales Today" value={`$${todaySales.toFixed(2)}`} icon="ShoppingCart" color="bg-blue-500" onClick={() => setDetailModal('today-sales')} />
+            <WidgetCard title="Total Products" value={products.length} icon="Package" color="bg-emerald-500" onClick={() => setDetailModal('total-products')} />
+            <WidgetCard title="Low Stock Alerts" value={lowStockList.length} icon="AlertTriangle" color="bg-amber-500" onClick={() => setDetailModal('low-stock')} />
+            <WidgetCard title="Out of Stock" value={outOfStockList.length} icon="XCircle" color="bg-red-500" onClick={() => setDetailModal('out-of-stock')} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-semibold mb-4 text-slate-800">Sales Overview (This Year)</h3>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={salesData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                    <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                    <RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}/>
+                    <Bar dataKey="sales" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-48 overflow-hidden flex flex-col">
+                 <h3 className="text-lg font-semibold mb-4 text-slate-800">Recent Activity</h3>
+                 <div className="flex-1 overflow-y-auto space-y-3">
+                   {notifications.length === 0 && <p className="text-slate-400 text-sm">No recent activity.</p>}
+                   {notifications.map(n => (
+                     <div key={n.id} className="text-sm border-l-2 border-emerald-500 pl-3 py-1">
+                       <p className="text-slate-700">{n.msg}</p>
+                       <span className="text-xs text-slate-400">{n.time}</span>
+                     </div>
+                   ))}
+                 </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-48 overflow-hidden flex flex-col">
+                <h3 className="text-lg font-semibold mb-2 text-slate-800 flex items-center gap-2">
+                  <Icon name="AlertTriangle" className="w-5 h-5 text-amber-500" /> Expiring Soon
+                </h3>
+                <div className="flex-1 overflow-y-auto">
+                  <ul className="space-y-2">
+                    {products.filter(p => new Date(p.expirationDate).getFullYear() === 2026).map(p => (
+                      <li key={p.id} className="flex justify-between items-center text-sm p-2 bg-amber-50 text-amber-900 rounded">
+                        <span className="font-medium">{p.name}</span>
+                        <span>{p.expirationDate}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {renderDetailModal()}
+        </div>
+      );
+    }
+
+    function WidgetCard({ title, value, icon, color, onClick }) {
+      return (
+        <div 
+          onClick={onClick}
+          className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-[0.98]"
+        >
+          <div className={`${color} p-4 rounded-lg text-white shadow-md`}>
+            <Icon name={icon} className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-500">{title}</p>
+            <p className="text-2xl font-bold text-slate-800">{value}</p>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // PRODUCT MANAGEMENT PAGE
+    // ==========================================
+    function ProductsView({ products, setProducts, suppliers, user, logActivity }) {
+      const [search, setSearch] = useState('');
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
+      const [editingProd, setEditingProd] = useState(null);
+
+      const initialForm = { name: '', genericName: '', brand: '', category: 'Analgesic', price: '', quantity: '', minStock: '', expirationDate: '', supplierId: 1, barcode: '' };
+      const [form, setForm] = useState(initialForm);
+
+      const filtered = products.filter(p => 
+        p.name.toLowerCase().includes(search.toLowerCase()) || 
+        p.genericName.toLowerCase().includes(search.toLowerCase()) ||
+        p.barcode.includes(search)
+      );
+
+      const handleSave = (e) => {
+        e.preventDefault();
+        const payload = { 
+          ...form, 
+          price: parseFloat(form.price), 
+          quantity: parseInt(form.quantity), 
+          minStock: parseInt(form.minStock),
+          supplierId: parseInt(form.supplierId)
+        };
+
+        if (editingProd) {
+          setProducts(prev => prev.map(p => p.id === editingProd.id ? { ...p, ...payload } : p));
+          logActivity(user, 'Edit Product', `Updated product: ${payload.name}`);
+        } else {
+          setProducts(prev => [...prev, { ...payload, id: Date.now(), history: mockHistory(100) }]);
+          logActivity(user, 'Add Product', `Added new product: ${payload.name}`);
+        }
+        closeModal();
+      };
+
+      const handleEdit = (p) => {
+        setEditingProd(p);
+        setForm(p);
+        setIsModalOpen(true);
+      };
+
+      const handleDelete = (id) => {
+        if(confirm('Are you sure you want to delete this product?')) {
+          const prodToDelete = products.find(p => p.id === id);
+          setProducts(prev => prev.filter(p => p.id !== id));
+          if (prodToDelete) logActivity(user, 'Delete Product', `Deleted product: ${prodToDelete.name}`);
+        }
+      };
+
+      const handleAIScanSuccess = (extractedData) => {
+        setIsAIScannerOpen(false);
+        setForm({ 
+          ...initialForm, 
+          name: extractedData.name || '',
+          genericName: extractedData.genericName || '',
+          brand: extractedData.brand || '',
+          category: extractedData.category || 'Analgesic',
+          expirationDate: extractedData.expirationDate || '',
+          barcode: extractedData.barcode || '',
+        });
+        setIsModalOpen(true);
+      };
+
+      const closeModal = () => {
+        setIsModalOpen(false);
+        setEditingProd(null);
+        setForm(initialForm);
+      };
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
+          <div className="flex justify-between items-center mb-6">
+            <div className="relative w-72">
+              <Icon name="Search" className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
+              <input 
+                type="text" placeholder="Search products or barcode..." 
+                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={search} onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setIsAIScannerOpen(true)}
+                className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium border border-emerald-200"
+              >
+                <Icon name="Camera" className="w-4 h-4" /> AI Label Scan
+              </button>
+              <button 
+                onClick={() => setIsModalOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium"
+              >
+                <Icon name="Plus" className="w-4 h-4" /> Add Product
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto border rounded-lg">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-50 sticky top-0 border-b">
+                <tr>
+                  <th className="p-3 font-medium text-slate-600">Barcode</th>
+                  <th className="p-3 font-medium text-slate-600">Name</th>
+                  <th className="p-3 font-medium text-slate-600">Category</th>
+                  <th className="p-3 font-medium text-slate-600">Price</th>
+                  <th className="p-3 font-medium text-slate-600">Qty</th>
+                  <th className="p-3 font-medium text-slate-600">Expiry</th>
+                  <th className="p-3 font-medium text-slate-600 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map(p => (
+                  <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-3 text-slate-500">{p.barcode}</td>
+                    <td className="p-3">
+                      <p className="font-semibold text-slate-800">{p.name}</p>
+                      <p className="text-xs text-slate-500">{p.genericName} • {p.brand}</p>
+                    </td>
+                    <td className="p-3 text-slate-600">{p.category}</td>
+                    <td className="p-3 text-slate-800 font-medium">${p.price.toFixed(2)}</td>
+                    <td className="p-3 text-slate-600">{p.quantity}</td>
+                    <td className="p-3 text-slate-600">{p.expirationDate}</td>
+                    <td className="p-3 flex justify-center gap-2">
+                      <button onClick={() => handleEdit(p)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Icon name="Edit" className="w-4 h-4"/></button>
+                      <button onClick={() => handleDelete(p.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Icon name="Trash2" className="w-4 h-4"/></button>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr><td colSpan="7" className="p-8 text-center text-slate-400">No products found.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {isAIScannerOpen && (
+            <AILabelScannerModal 
+              onClose={() => setIsAIScannerOpen(false)} 
+              onScan={handleAIScanSuccess} 
+            />
+          )}
+
+          {isModalOpen && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-slate-800">{editingProd ? 'Edit Product' : 'Add New Product'}</h3>
+                  <button onClick={closeModal} className="text-slate-400 hover:text-slate-600"><Icon name="XCircle" className="w-6 h-6"/></button>
+                </div>
+                <form onSubmit={handleSave} className="p-6 overflow-y-auto grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label>
+                    <input required type="text" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Generic Name</label>
+                    <input required type="text" value={form.genericName} onChange={e=>setForm({...form, genericName: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Brand</label>
+                    <input required type="text" value={form.brand} onChange={e=>setForm({...form, brand: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <select value={form.category} onChange={e=>setForm({...form, category: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none bg-white">
+                      <option>Analgesic</option><option>Antibiotic</option><option>Antihistamine</option>
+                      <option>Antihypertensive</option><option>Antidiabetic</option><option>Vitamins</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Price ($)</label>
+                    <input required type="number" step="0.01" value={form.price} onChange={e=>setForm({...form, price: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Quantity</label>
+                    <input required type="number" value={form.quantity} onChange={e=>setForm({...form, quantity: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Min. Stock Level</label>
+                    <input required type="number" value={form.minStock} onChange={e=>setForm({...form, minStock: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Expiration Date</label>
+                    <input required type="date" value={form.expirationDate} onChange={e=>setForm({...form, expirationDate: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Barcode</label>
+                    <input required type="text" value={form.barcode} onChange={e=>setForm({...form, barcode: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Supplier</label>
+                    <select value={form.supplierId} onChange={e=>setForm({...form, supplierId: e.target.value})} className="w-full p-2 border rounded focus:ring-emerald-500 outline-none bg-white">
+                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  
+                  <div className="col-span-2 flex justify-end gap-3 mt-4 pt-4 border-t">
+                    <button type="button" onClick={closeModal} className="px-4 py-2 border rounded text-slate-600 hover:bg-slate-50">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700">Save Product</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // SALES (POS) PAGE
+    // ==========================================
+    function POSView({ products, setProducts, setSales, addNotification, user, logActivity }) {
+      const [cart, setCart] = useState([]);
+      const [search, setSearch] = useState('');
+      const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+      const processScanOrSearch = (query) => {
+        if(!query) return;
+        const prod = products.find(p => p.barcode === query || p.name.toLowerCase() === query.toLowerCase());
+        if (prod) {
+          if (prod.quantity <= 0) {
+            alert("Product is out of stock!");
+            return;
+          }
+          addToCart(prod);
+          setSearch('');
+        } else {
+          alert("Product not found");
+        }
+      };
+
+      const handleManualSearch = (e) => {
+        e.preventDefault();
+        processScanOrSearch(search);
+      };
+
+      const handleCameraScan = (decodedText) => {
+        setIsScannerOpen(false);
+        processScanOrSearch(decodedText);
+      };
+
+      const addToCart = (product) => {
+        setCart(prev => {
+          const existing = prev.find(item => item.id === product.id);
+          if (existing) {
+            if (existing.cartQty >= product.quantity) {
+              alert("Cannot exceed available stock");
+              return prev;
+            }
+            return prev.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, total: (item.cartQty + 1) * item.price } : item);
+          }
+          return [...prev, { ...product, cartQty: 1, total: product.price }];
+        });
+      };
+
+      const removeFromCart = (id) => setCart(prev => prev.filter(item => item.id !== id));
+
+      const totalAmount = cart.reduce((sum, item) => sum + item.total, 0);
+
+      const handleCheckout = () => {
+        if (cart.length === 0) return;
+        
+        // Deduct inventory
+        const cartMap = cart.reduce((acc, item) => ({...acc, [item.id]: item.cartQty}), {});
+        setProducts(prev => prev.map(p => 
+          cartMap[p.id] ? { ...p, quantity: p.quantity - cartMap[p.id] } : p
+        ));
+
+        // Save Sale
+        const saleRecord = {
+          id: Date.now(),
+          date: new Date().toISOString(),
+          items: cart.map(c => ({ name: c.name, qty: c.cartQty, price: c.price, total: c.total })),
+          total: totalAmount
+        };
+        setSales(prev => [saleRecord, ...prev]);
+        addNotification(`Sale completed: $${totalAmount.toFixed(2)}`);
+        logActivity(user, 'Process Sale', `Processed transaction ID: ${saleRecord.id} for $${totalAmount.toFixed(2)}`);
+        setCart([]);
+        
+        // Simulate Receipt
+        alert("Receipt Printed!\nTransaction Complete.");
+      };
+
+      return (
+        <div className="flex flex-col lg:flex-row gap-6 h-full relative">
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Icon name="ScanLine" className="w-5 h-5"/> Point of Sale</h3>
+            
+            <form onSubmit={handleManualSearch} className="flex gap-2 mb-6">
+              <button 
+                type="button"
+                onClick={() => setIsScannerOpen(true)}
+                className="bg-slate-100 text-slate-700 px-4 py-3 rounded-lg font-medium border border-slate-200 hover:bg-slate-200 transition-colors"
+                title="Use Camera to Scan Barcode"
+              >
+                <Icon name="QrCode" className="w-5 h-5"/>
+              </button>
+              <input 
+                type="text" autoFocus
+                placeholder="Scan Barcode manually or Search Product Name..." 
+                className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none bg-slate-50"
+                value={search} onChange={e => setSearch(e.target.value)}
+              />
+              <button type="submit" className="bg-emerald-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-emerald-700">Add</button>
+            </form>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-2 pb-4">
+              {products.filter(p => p.quantity > 0).map(p => (
+                <div 
+                  key={p.id} 
+                  onClick={() => addToCart(p)}
+                  className="border border-slate-200 p-3 rounded-lg cursor-pointer hover:border-emerald-500 hover:shadow-md transition-all bg-white"
+                >
+                  <p className="font-semibold text-slate-800 text-sm">{p.name}</p>
+                  <p className="text-xs text-slate-500 mb-2">{p.genericName}</p>
+                  <div className="flex justify-between items-center mt-auto">
+                    <span className="font-bold text-emerald-600">${p.price.toFixed(2)}</span>
+                    <span className="text-xs bg-slate-100 px-2 py-1 rounded">Qty: {p.quantity}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-full lg:w-96 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+            <div className="p-4 bg-slate-50 border-b">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2"><Icon name="ShoppingCart" className="w-5 h-5"/> Current Order</h3>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {cart.length === 0 && <p className="text-center text-slate-400 mt-10">Cart is empty</p>}
+              {cart.map(item => (
+                <div key={item.id} className="flex justify-between items-center border-b pb-2">
+                  <div>
+                    <p className="font-semibold text-sm">{item.name}</p>
+                    <p className="text-xs text-slate-500">{item.cartQty} x ${item.price.toFixed(2)}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-sm">${item.total.toFixed(2)}</span>
+                    <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Icon name="XCircle" className="w-4 h-4"/></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t space-y-4">
+              <div className="flex justify-between items-center text-lg font-bold text-slate-800">
+                <span>Total:</span>
+                <span>${totalAmount.toFixed(2)}</span>
+              </div>
+              <button 
+                onClick={handleCheckout} disabled={cart.length === 0}
+                className="w-full bg-emerald-600 disabled:bg-slate-300 text-white py-3 rounded-lg font-bold text-lg hover:bg-emerald-700 transition-colors flex justify-center items-center gap-2"
+              >
+                <Icon name="Printer" className="w-5 h-5"/> Print & Checkout
+              </button>
+            </div>
+          </div>
+
+          {isScannerOpen && (
+            <BarcodeScannerModal 
+              onClose={() => setIsScannerOpen(false)} 
+              onScan={handleCameraScan} 
+            />
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // INVENTORY MONITORING PAGE
+    // ==========================================
+    function InventoryView({ products }) {
+      const getStatus = (qty, min) => {
+        if (qty === 0) return { label: 'Out of Stock', color: 'bg-red-100 text-red-800 border-red-200', dot: 'bg-red-500' };
+        if (qty <= min) return { label: 'Low Stock', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', dot: 'bg-yellow-500' };
+        return { label: 'Normal', color: 'bg-green-100 text-green-800 border-green-200', dot: 'bg-green-500' };
+      };
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-slate-800">Inventory Status</h3>
+            <div className="flex gap-4 text-sm">
+              <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-500"></div> Normal</span>
+              <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-yellow-500"></div> Low</span>
+              <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500"></div> Out of Stock</span>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto border rounded-lg">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-50 sticky top-0 border-b">
+                <tr>
+                  <th className="p-4 font-medium text-slate-600">Product</th>
+                  <th className="p-4 font-medium text-slate-600">Current Stock</th>
+                  <th className="p-4 font-medium text-slate-600">Min. Level</th>
+                  <th className="p-4 font-medium text-slate-600">Expiry Date</th>
+                  <th className="p-4 font-medium text-slate-600">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {products.map(p => {
+                  const status = getStatus(p.quantity, p.minStock);
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="p-4 font-medium text-slate-800">{p.name} <span className="text-xs font-normal text-slate-500 ml-2">({p.genericName})</span></td>
+                      <td className="p-4 font-bold">{p.quantity}</td>
+                      <td className="p-4 text-slate-500">{p.minStock}</td>
+                      <td className="p-4 text-slate-600">{p.expirationDate}</td>
+                      <td className="p-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold border flex items-center gap-1.5 w-max ${status.color}`}>
+                          <div className={`w-2 h-2 rounded-full ${status.dot}`}></div>
+                          {status.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // FORECASTING PAGE (SMA)
+    // ==========================================
+    function ForecastView({ products }) {
+      const [selectedProductId, setSelectedProductId] = useState(products[0]?.id || '');
+      const [period, setPeriod] = useState(3);
+
+      const selectedProduct = products.find(p => p.id === parseInt(selectedProductId));
+
+      const generateChartData = () => {
+        if (!selectedProduct) return [];
+        const history = selectedProduct.history;
+        const data = [];
+        
+        for (let i = 0; i < 12; i++) {
+          let sma = null;
+          if (i >= period) {
+            let sum = 0;
+            for (let j = 1; j <= period; j++) {
+              sum += history[i - j];
+            }
+            sma = Math.round(sum / period);
+          }
+          data.push({
+            month: months[i],
+            Actual: history[i],
+            Forecast: sma
+          });
+        }
+
+        let sumNext = 0;
+        for (let j = 0; j < period; j++) {
+          sumNext += history[11 - j];
+        }
+        const nextForecast = Math.round(sumNext / period);
+        data.push({
+          month: 'Next (Jan)',
+          Actual: null,
+          Forecast: nextForecast
+        });
+
+        return data;
+      };
+
+      const chartData = useMemo(generateChartData, [selectedProductId, period, selectedProduct]);
+      const nextMonthPrediction = chartData.length > 0 ? chartData[chartData.length - 1].Forecast : 0;
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+              <h3 className="text-xl font-bold text-slate-800">Demand Forecasting (SMA)</h3>
+              <p className="text-sm text-slate-500">Simple Moving Average based on historical monthly sales.</p>
+            </div>
+            
+            <div className="flex gap-4">
+              <select 
+                className="p-2 border rounded-lg focus:ring-emerald-500 outline-none bg-slate-50"
+                value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)}
+              >
+                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <select 
+                className="p-2 border rounded-lg focus:ring-emerald-500 outline-none bg-slate-50"
+                value={period} onChange={e => setPeriod(parseInt(e.target.value))}
+              >
+                <option value={3}>3-Month Average</option>
+                <option value={6}>6-Month Average</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col">
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 mb-6 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-emerald-800 mb-1">Predicted Demand for Next Month</p>
+                <p className="text-3xl font-bold text-emerald-600">{nextMonthPrediction} units</p>
+              </div>
+              <Icon name="TrendingUp" className="w-12 h-12 text-emerald-200" />
+            </div>
+
+            <div className="flex-1 min-h-[400px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <RechartsTooltip cursor={{stroke: '#cbd5e1', strokeWidth: 1}} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}/>
+                  <Legend iconType="circle" />
+                  <Line type="monotone" dataKey="Actual" stroke="#94a3b8" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} />
+                  <Line type="monotone" dataKey="Forecast" stroke="#10b981" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} activeDot={{r: 6}} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // SUPPLIER MANAGEMENT PAGE
+    // ==========================================
+    function SuppliersView({ suppliers, setSuppliers, user, logActivity }) {
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [form, setForm] = useState({ name: '', contact: '', address: '', email: '' });
+
+      const handleSave = (e) => {
+        e.preventDefault();
+        setSuppliers(prev => [...prev, { ...form, id: Date.now(), productsSupplied: 0 }]);
+        logActivity(user, 'Add Supplier', `Added supplier: ${form.name}`);
+        setIsModalOpen(false);
+        setForm({ name: '', contact: '', address: '', email: '' });
+      };
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-slate-800">Supplier Directory</h3>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <Icon name="Plus" className="w-4 h-4" /> Add Supplier
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {suppliers.map(s => (
+              <div key={s.id} className="border border-slate-200 rounded-xl p-5 hover:shadow-md transition-shadow bg-slate-50 relative group">
+                <h4 className="font-bold text-lg text-slate-800 mb-2">{s.name}</h4>
+                <div className="text-sm text-slate-600 space-y-2">
+                  <p><span className="font-medium text-slate-700">Contact:</span> {s.contact}</p>
+                  <p><span className="font-medium text-slate-700">Email:</span> {s.email}</p>
+                  <p><span className="font-medium text-slate-700">Address:</span> {s.address}</p>
+                </div>
+                <div className="mt-4 pt-4 border-t flex justify-between items-center">
+                  <span className="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-1 rounded">
+                    {s.productsSupplied} Products Supplied
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {isModalOpen && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-slate-800">Add Supplier</h3>
+                  <button onClick={() => setIsModalOpen(false)}><Icon name="XCircle" className="w-6 h-6 text-slate-400"/></button>
+                </div>
+                <form onSubmit={handleSave} className="space-y-4">
+                  <div><label className="block text-sm mb-1">Name</label><input required value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full p-2 border rounded" /></div>
+                  <div><label className="block text-sm mb-1">Contact No.</label><input required value={form.contact} onChange={e=>setForm({...form, contact: e.target.value})} className="w-full p-2 border rounded" /></div>
+                  <div><label className="block text-sm mb-1">Email</label><input required type="email" value={form.email} onChange={e=>setForm({...form, email: e.target.value})} className="w-full p-2 border rounded" /></div>
+                  <div><label className="block text-sm mb-1">Address</label><input required value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full p-2 border rounded" /></div>
+                  <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded mt-2">Save Supplier</button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // REPORTS PAGE
+    // ==========================================
+    function ReportsView({ products, sales, suppliers }) {
+      const handleExport = (type) => {
+        switch(type) {
+          case 'inventory':
+            exportToCSV(products.map(p => ({ ID: p.id, Name: p.name, Qty: p.quantity, Price: p.price, Expiry: p.expirationDate })), 'Inventory_Report');
+            break;
+          case 'sales':
+            exportToCSV(sales.map(s => ({ ID: s.id, Date: s.date, Total: s.total, Items: s.items.length })), 'Sales_Report');
+            break;
+          case 'expiry':
+            const expiring = products.filter(p => new Date(p.expirationDate).getFullYear() <= 2026);
+            exportToCSV(expiring.map(p => ({ Name: p.name, Expiry: p.expirationDate, Qty: p.quantity })), 'Expiration_Report');
+            break;
+          default:
+            alert("Report generated successfully!");
+        }
+      };
+
+      const reportsList = [
+        { id: 'inventory', title: 'Full Inventory Report', desc: 'Complete list of products, stock levels, and pricing.', icon: 'ClipboardList' },
+        { id: 'sales', title: 'Sales Transactions', desc: 'Historical data of all point-of-sale transactions.', icon: 'FileBarChart' },
+        { id: 'expiry', title: 'Expiration Report', desc: 'List of medicines expiring within the next 12 months.', icon: 'AlertTriangle' },
+        { id: 'forecast', title: 'Forecast Summary', desc: 'Generated SMA predictions for main products.', icon: 'TrendingUp' },
+      ];
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+          <h3 className="text-xl font-bold text-slate-800 mb-6">Generate Reports</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {reportsList.map(report => (
+              <div key={report.id} className="border border-slate-200 rounded-xl p-5 flex items-start gap-4 hover:border-emerald-300 transition-colors bg-slate-50">
+                <div className="bg-emerald-100 p-3 rounded-lg text-emerald-600">
+                  <Icon name={report.icon} className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-bold text-slate-800">{report.title}</h4>
+                  <p className="text-sm text-slate-500 mb-4 mt-1">{report.desc}</p>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleExport(report.id)}
+                      className="flex items-center gap-1.5 text-xs bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700"
+                    >
+                      <Icon name="Download" className="w-3 h-3" /> Export CSV (Excel)
+                    </button>
+                    <button 
+                      onClick={() => window.print()}
+                      className="flex items-center gap-1.5 text-xs border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-100"
+                    >
+                      <Icon name="Printer" className="w-3 h-3" /> Print PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // USER MANAGEMENT PAGE (ADMIN ONLY)
+    // ==========================================
+    function UserManagementView({ accounts, setAccounts, user, logActivity }) {
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [form, setForm] = useState({ username: '', password: '', role: 'Pharmacist' });
+
+      const handleSave = (e) => {
+        e.preventDefault();
+        if (accounts.some(a => a.username === form.username)) {
+          alert('Username already exists!');
+          return;
+        }
+        setAccounts(prev => [...prev, { ...form, id: Date.now() }]);
+        logActivity(user, 'Create User', `Created ${form.role} account for ${form.username}`);
+        setIsModalOpen(false);
+        setForm({ username: '', password: '', role: 'Pharmacist' });
+      };
+
+      const handleDelete = (id, username) => {
+        if (username === user.username) {
+          alert("You cannot delete your own account.");
+          return;
+        }
+        if (confirm(`Are you sure you want to delete the account for ${username}?`)) {
+          setAccounts(prev => prev.filter(a => a.id !== id));
+          logActivity(user, 'Delete User', `Deleted account for ${username}`);
+        }
+      };
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-xl font-bold text-slate-800">User Management</h3>
+              <p className="text-sm text-slate-500">Manage access credentials for Pharmacists and Cashiers.</p>
+            </div>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <Icon name="ShieldCheck" className="w-4 h-4" /> Create Account
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-auto border rounded-lg">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-50 sticky top-0 border-b">
+                <tr>
+                  <th className="p-4 font-medium text-slate-600">Username</th>
+                  <th className="p-4 font-medium text-slate-600">Role</th>
+                  <th className="p-4 font-medium text-slate-600 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {accounts.map(acc => (
+                  <tr key={acc.id} className="hover:bg-slate-50">
+                    <td className="p-4 font-medium text-slate-800">{acc.username} {acc.username === user.username && <span className="ml-2 text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">You</span>}</td>
+                    <td className="p-4">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                        acc.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
+                        acc.role === 'Pharmacist' ? 'bg-blue-100 text-blue-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {acc.role}
+                      </span>
+                    </td>
+                    <td className="p-4 flex justify-center">
+                      <button 
+                        onClick={() => handleDelete(acc.id, acc.username)} 
+                        disabled={acc.username === user.username}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:hover:bg-transparent"
+                      >
+                        <Icon name="Trash2" className="w-4 h-4"/>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {isModalOpen && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-slate-800">Create New Account</h3>
+                  <button onClick={() => setIsModalOpen(false)}><Icon name="XCircle" className="w-6 h-6 text-slate-400"/></button>
+                </div>
+                <form onSubmit={handleSave} className="space-y-4">
+                  <div>
+                    <label className="block text-sm mb-1">Username</label>
+                    <input required value={form.username} onChange={e=>setForm({...form, username: e.target.value})} className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Password</label>
+                    <input required type="password" value={form.password} onChange={e=>setForm({...form, password: e.target.value})} className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Role</label>
+                    <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
+                      <option value="Pharmacist">Pharmacist</option>
+                      <option value="Cashier">Cashier</option>
+                      <option value="Admin">Admin</option>
+                    </select>
+                  </div>
+                  <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded mt-2 hover:bg-emerald-700">Create User</button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // ACTIVITY LOGS PAGE (ADMIN ONLY)
+    // ==========================================
+    function ActivityLogsView({ logs }) {
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
+          <div className="mb-6">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Icon name="History" className="w-5 h-5" /> System Activity Logs
+            </h3>
+            <p className="text-sm text-slate-500">Audit trail of all actions performed within the system.</p>
+          </div>
+
+          <div className="flex-1 overflow-auto border rounded-lg bg-slate-50">
+            <table className="w-full text-left border-collapse bg-white">
+              <thead className="bg-slate-100 sticky top-0 border-b">
+                <tr>
+                  <th className="p-4 font-medium text-slate-600">Timestamp</th>
+                  <th className="p-4 font-medium text-slate-600">User</th>
+                  <th className="p-4 font-medium text-slate-600">Action</th>
+                  <th className="p-4 font-medium text-slate-600">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {logs.map(log => (
+                  <tr key={log.id} className="hover:bg-slate-50 text-sm">
+                    <td className="p-4 text-slate-500">{new Date(log.timestamp).toLocaleString()}</td>
+                    <td className="p-4">
+                      <span className="font-semibold text-slate-800">{log.username}</span>
+                      <span className="ml-2 text-xs text-slate-400">({log.role})</span>
+                    </td>
+                    <td className="p-4">
+                      <span className="px-2 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium">
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="p-4 text-slate-600">{log.details}</td>
+                  </tr>
+                ))}
+                {logs.length === 0 && (
+                  <tr><td colSpan="4" className="p-8 text-center text-slate-400">No activity recorded yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // Mount the Application
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+    @endverbatim
+  </script>
+</body>
+</html>
